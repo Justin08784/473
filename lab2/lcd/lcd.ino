@@ -28,6 +28,36 @@
 #define CLR_BIT(r, i)   do {( (r) &= ~(1u << (i))   );} while(0)
 #define ADD_BIT(r, i, b)do {( (r) |= ((b) << (i))   );} while(0)
 
+#define INSN_CLEAR_DISPLAY              ((uint8_t) 0x1)
+#define INSN_RETURN_HOME                ((uint8_t) 0x2)
+
+#define INSN_ENTRY_MODE_SET             ((uint8_t) 0x4)
+#define ENTRY_MODE_SET_I_INCREMENT      ((uint8_t) 0b10)
+#define ENTRY_MODE_SET_I_DECREMENT      ((uint8_t) 0)
+#define ENTRY_MODE_SET_S_DISPLAY_SHIFT  ((uint8_t) 0b01)
+#define ENTRY_MODE_SET_S_CURSOR_MOVE    ((uint8_t) 0)
+
+#define INSN_DISPLAY_ONOFF              ((uint8_t) 0x8)
+#define DISPLAY_ONOFF_D_DISPLAY_ON      ((uint8_t) 0b100)
+#define DISPLAY_ONOFF_D_DISPLAY_OFF     ((uint8_t) 0)
+#define DISPLAY_ONOFF_C_CURSOR_ON       ((uint8_t) 0b010)
+#define DISPLAY_ONOFF_C_CURSOR_OFF      ((uint8_t) 0)
+#define DISPLAY_ONOFF_B_BLINK_ON        ((uint8_t) 0b001)
+#define DISPLAY_ONOFF_B_BLINK_OFF       ((uint8_t) 0)
+
+#define INSN_CD_SHIFT                   ((uint8_t) 0x10)
+
+#define INSN_FUNCTION_SET               ((uint8_t) 0x20)
+#define FUNCTION_SET_DL_8BITS           ((uint8_t) 0b10000)
+#define FUNCTION_SET_DL_4BITS           ((uint8_t) 0)
+#define FUNCTION_SET_N_LINES_2          ((uint8_t) 0b01000)
+#define FUNCTION_SET_N_LINES_1          ((uint8_t) 0)
+#define FUNCTION_SET_F_DOTS_5x10        ((uint8_t) 0b00100)
+#define FUNCTION_SET_F_DOTS_5x8         ((uint8_t) 0)
+
+#define INSN_SET_DDRAM_ADDRESS          ((uint8_t) 0xC0)
+
+
 struct Lcd_Config {
     uint8_t dcb;        // display onoff config 
     uint8_t func_set;   // function set config
@@ -83,12 +113,13 @@ int lcd_send_store_glyph_5x8        (const struct Lcd_Connection *con, const uin
 int lcd_send_store_glyph_5x10       (const struct Lcd_Connection *con, const uint8_t src[10], uint8_t slot);
     // ^ assert 0 ≤ slot ≤ 3
 
-int lcd_send_insn                   (const struct Lcd_Connection *con, const uint8_t cmd);
+int lcd_send_insn                   (const struct Lcd_Connection *con, const uint8_t insn);
 int lcd_send_data                   (const struct Lcd_Connection *con, const uint8_t data);
     // ^ "backdoor"
 
 
-void pulse_E                        (const struct Lcd_Conneciton *con);
+void pulse_E                        (const struct Lcd_Connection *con);
+void lcd_set_nibble                 (const struct Lcd_Connection *con, uint8_t nib);
 
 int lcd_init_connection(const struct Lcd_Config *cfg, struct Lcd_Connection *rv)
 {
@@ -159,28 +190,34 @@ int lcd_init_connection(const struct Lcd_Config *cfg, struct Lcd_Connection *rv)
     pulse_E(rv);
     delay(1);
 
-    lcd_send_insn_wait_time(rv, 0b00101000);
-    lcd_send_insn_wait_time(rv, 0b00001000);
-    lcd_send_insn_wait_time(rv, 0b00000001);
-    lcd_send_insn_wait_time(rv, 0b00000110);
+    lcd_send_insn(rv, INSN_FUNCTION_SET
+                    | FUNCTION_SET_DL_4BITS
+                    | FUNCTION_SET_N_LINES_2
+                    | FUNCTION_SET_F_DOTS_5x8);
+    lcd_send_insn(rv, INSN_DISPLAY_ONOFF);
+    lcd_send_insn(rv, INSN_CLEAR_DISPLAY);
+    lcd_send_insn(rv, INSN_ENTRY_MODE_SET
+                    | ENTRY_MODE_SET_I_INCREMENT
+                    | ENTRY_MODE_SET_S_CURSOR_MOVE);
+    // lcd_send_insn(rv, 0b00101000);
+    // lcd_send_insn(rv, 0b00001000);
+    // lcd_send_insn(rv, 0b00000001);
+    // lcd_send_insn(rv, 0b00000110);
+
+    lcd_send_insn(rv, INSN_DISPLAY_ONOFF
+                    | DISPLAY_ONOFF_D_DISPLAY_ON);
+    // lcd_send_insn(rv, 0b00001111);
 
 
-    delay(1);
 
-    lcd_send_insn_wait_time(rv, 0b00001111);
 
-    char *str = "aparaphernelia";
-    size_t len = strlen(str);
-    for (size_t i = 0; i < len; ++i)
-        lcd_send_data_wait_time(rv, str[i]);
-
-    // lcd_send_data_wait_time(0b00100000);
+    // lcd_send_data(0b00100000);
     // str = "RULES";
     // len = strlen(str);
     // for (size_t i = 0; i < len; ++i)
-    //     lcd_send_data_wait_time(str[i]);
+    //     lcd_send_data(str[i]);
 
-    // lcd_send_data_wait_time(0b01001101);
+    // lcd_send_data(0b01001101);
     return;
 
 
@@ -189,7 +226,7 @@ int lcd_init_connection(const struct Lcd_Config *cfg, struct Lcd_Connection *rv)
 void pulse_E(const struct Lcd_Connection *con)
 {
     SET_BIT(*con->port_e, con->pin_e);
-    delayMicroseconds(40);
+    delayMicroseconds(1);
     CLR_BIT(*con->port_e, con->pin_e);
 }
 
@@ -207,34 +244,68 @@ void lcd_set_nibble(const struct Lcd_Connection *con, uint8_t nib)
 
 }
 
-void lcd_send_insn_wait_time(const struct Lcd_Connection *con, uint8_t d)
+int lcd_send_clear_display(const struct Lcd_Connection *con)
+{
+    return lcd_send_insn(con, INSN_CLEAR_DISPLAY);
+}
+
+int lcd_send_return_home(const struct Lcd_Connection *con)
+{
+    return lcd_send_insn(con, INSN_RETURN_HOME);
+}
+
+int lcd_send_set_cursor(const struct Lcd_Connection *con, uint8_t row, uint8_t col)
+{
+    // TODO
+    uint8_t insn =
+        INSN_SET_DDRAM_ADDRESS
+    |   ((row & 1u)         << 6)
+    |   (col & 0b111111);
+    return lcd_send_insn(con, insn);
+}
+
+int lcd_send_display_char(const struct Lcd_Connection *con, uint8_t c)
+{
+    return lcd_send_data(con, c);
+}
+
+int lcd_send_display_span(const struct Lcd_Connection *con, const uint8_t *src, size_t nbytes)
+{
+    for (size_t i = 0; i < nbytes; ++i)
+        lcd_send_data(con, src[i]);
+    return 0;
+}
+
+int lcd_send_insn(const struct Lcd_Connection *con, uint8_t d)
 {
     CLR_BIT(*con->port_rw, con->pin_rw);
     CLR_BIT(*con->port_rs, con->pin_rs);
 
     lcd_set_nibble(con, d >> 4);
     pulse_E(con);
-    delayMicroseconds(40);
+    delayMicroseconds(1);
 
     lcd_set_nibble(con, d);
     pulse_E(con);
-    delay(10);
+    delay(1);
 
+    return 0;
 }
 
-void lcd_send_data_wait_time(const struct Lcd_Connection *con, uint8_t d)
+int lcd_send_data(const struct Lcd_Connection *con, uint8_t d)
 {
     CLR_BIT(*con->port_rw, con->pin_rw);
     SET_BIT(*con->port_rs, con->pin_rs);
 
     lcd_set_nibble(con, d >> 4);
     pulse_E(con);
-    delayMicroseconds(40);
+    delayMicroseconds(1);
 
     lcd_set_nibble(con, d);
     pulse_E(con);
     delay(1);
 
+    return 0;
 }
 
 // void lcd_send_insn_wait_busy(uint8_t d)
@@ -335,28 +406,28 @@ void lcd_send_data_wait_time(const struct Lcd_Connection *con, uint8_t d)
 //     pulse_E();
 //     delay(1);
 
-//     lcd_send_insn_wait_time(0b00101000);
-//     lcd_send_insn_wait_time(0b00001000);
-//     lcd_send_insn_wait_time(0b00000001);
-//     lcd_send_insn_wait_time(0b00000110);
+//     lcd_send_insn(0b00101000);
+//     lcd_send_insn(0b00001000);
+//     lcd_send_insn(0b00000001);
+//     lcd_send_insn(0b00000110);
 
 
 //     delay(1);
 
-//     lcd_send_insn_wait_time(0b00001111);
+//     lcd_send_insn(0b00001111);
 
 //     char *str = "ARDUINOOO";
 //     size_t len = strlen(str);
 //     for (size_t i = 0; i < len; ++i)
-//         lcd_send_data_wait_time(str[i]);
+//         lcd_send_data(str[i]);
 
-//     // lcd_send_data_wait_time(0b00100000);
+//     // lcd_send_data(0b00100000);
 //     // str = "RULES";
 //     // len = strlen(str);
 //     // for (size_t i = 0; i < len; ++i)
-//     //     lcd_send_data_wait_time(str[i]);
+//     //     lcd_send_data(str[i]);
 
-//     // lcd_send_data_wait_time(0b01001101);
+//     // lcd_send_data(0b01001101);
 //     return;
 
 
@@ -382,6 +453,16 @@ int main(int argc, char *argv[])
 
     struct Lcd_Connection con;
     lcd_init_connection(NULL, &con);
+
+    char *str = "papap";
+    size_t len = strlen(str);
+    lcd_send_set_cursor(&con, 1, 0);
+    lcd_send_display_span(&con, str, strlen(str));
+    // char *str = "aparaphernelia";
+    // size_t len = strlen(str);
+    // for (size_t i = 0; i < len; ++i)
+    //     lcd_send_data(&con, str[i]);
+
 
     return 0;
 
