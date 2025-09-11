@@ -1,32 +1,11 @@
 #include "Arduino.h"
 
-#define PORT_E      PORTB
-#define PORT_RW     PORTD
-#define PORT_RS     PORTD
-#define PORT_DB7    PORTD
-#define PORT_DB6    PORTD
-#define PORT_DB5    PORTD
-#define PORT_DB4    PORTD
-
-#define DDR_E       DDRB
-#define DDR_RW      DDRD
-#define DDR_RS      DDRD
-#define DDR_DB7     DDRD
-#define DDR_DB6     DDRD
-#define DDR_DB5     DDRD
-#define DDR_DB4     DDRD
-
-#define PIN_E       0   // ddrb
-#define PIN_RW      7   // ddrd rest...
-#define PIN_RS      6
-#define PIN_DB7     5
-#define PIN_DB6     4
-#define PIN_DB5     3
-#define PIN_DB4     2
-
 #define SET_BIT(r, i)   do {( (r) |= (1u << (i))    );} while(0)
 #define CLR_BIT(r, i)   do {( (r) &= ~(1u << (i))   );} while(0)
 #define ADD_BIT(r, i, b)do {( (r) |= ((b) << (i))   );} while(0)
+
+#define PIN_TO_PORT_INDEX(i)            (((i) >> 3) & 1u)
+#define PIN_TO_PORT_BIT(i)              ((i) & 0b111)
 
 #define INSN_CLEAR_DISPLAY              ((uint8_t) 0x1)
 #define INSN_RETURN_HOME                ((uint8_t) 0x2)
@@ -55,24 +34,36 @@
 #define FUNCTION_SET_F_DOTS_5x10        ((uint8_t) 0b00100)
 #define FUNCTION_SET_F_DOTS_5x8         ((uint8_t) 0)
 
-#define INSN_SET_DDRAM_ADDRESS          ((uint8_t) 0xC0)
+#define INSN_SET_DDRAM_ADDRESS          ((uint8_t) 0x80)
 
+volatile uint8_t *const DDR_REGS[2] = {&DDRD,   &DDRB};
+volatile uint8_t *const PORT_REGS[2]= {&PORTD,  &PORTB};
 
 struct Lcd_Config {
-    uint8_t dcb;        // display onoff config 
-    uint8_t func_set;   // function set config
+    // uint8_t dcb;        // display onoff config 
+    // uint8_t func_set;   // function set config
 
     // pin indices
-    uint8_t rs, e, rw;
-    uint8_t d4, d5, d6, d7;
-        // note: d0-d3 unused (we only support 4-bit mode)
+    uint8_t rs, rw, e;
+    uint8_t db4, db5, db6, db7;
+        // note: db0-db3 unused (we only support 4-bit mode)
+};
+
+const struct Lcd_Config default_config = {
+    .rs = 6,
+    .rw = 7,
+    .e  = 8,
+    .db4= 2,
+    .db5= 3,
+    .db6= 4,
+    .db7= 5
 };
 
 struct Lcd_Connection {
     // ddr
     volatile uint8_t *ddr_rs;
-    volatile uint8_t *ddr_e;
     volatile uint8_t *ddr_rw;
+    volatile uint8_t *ddr_e;
     volatile uint8_t *ddr_db4;
     volatile uint8_t *ddr_db5;
     volatile uint8_t *ddr_db6;
@@ -80,8 +71,8 @@ struct Lcd_Connection {
 
     // port
     volatile uint8_t *port_rs;
-    volatile uint8_t *port_e;
     volatile uint8_t *port_rw;
+    volatile uint8_t *port_e;
     volatile uint8_t *port_db4;
     volatile uint8_t *port_db5;
     volatile uint8_t *port_db6;
@@ -89,8 +80,8 @@ struct Lcd_Connection {
 
     // pin
     uint8_t pin_rs;
-    uint8_t pin_e;
     uint8_t pin_rw;
+    uint8_t pin_e;
     uint8_t pin_db4;
     uint8_t pin_db5;
     uint8_t pin_db6;
@@ -108,9 +99,9 @@ int lcd_send_display_char           (const struct Lcd_Connection *con, uint8_t c
 int lcd_send_display_span           (const struct Lcd_Connection *con, const uint8_t *src, size_t nbytes);
     // ^ if       c ≤ 7   , display custom glyph slot CGRAM[c]. Slot depends on font size.
     //   else             , display predefined glyph from ROM
-int lcd_send_store_glyph_5x8        (const struct Lcd_Connection *con, const uint8_t src[8], uint8_t slot);
+// int lcd_send_store_glyph_5x8        (const struct Lcd_Connection *con, const uint8_t src[8], uint8_t slot);
     // ^ assert 0 ≤ slot ≤ 7
-int lcd_send_store_glyph_5x10       (const struct Lcd_Connection *con, const uint8_t src[10], uint8_t slot);
+// int lcd_send_store_glyph_5x10       (const struct Lcd_Connection *con, const uint8_t src[10], uint8_t slot);
     // ^ assert 0 ≤ slot ≤ 3
 
 int lcd_send_insn                   (const struct Lcd_Connection *con, const uint8_t insn);
@@ -118,45 +109,78 @@ int lcd_send_data                   (const struct Lcd_Connection *con, const uin
     // ^ "backdoor"
 
 
-void pulse_E                        (const struct Lcd_Connection *con);
-void lcd_set_nibble                 (const struct Lcd_Connection *con, uint8_t nib);
+static inline void pulse_E                        (const struct Lcd_Connection *con);
+static inline void lcd_set_nibble                 (const struct Lcd_Connection *con, uint8_t nib);
 
 int lcd_init_connection(const struct Lcd_Config *cfg, struct Lcd_Connection *rv)
 {
-    if (!cfg) {
-        // NULL config. Use defaults
+    if (!cfg) // NULL config. Use defaults
+        *cfg = default_config;
 
-        *rv = {
-            .ddr_rs     = &DDR_RS,
-            .ddr_e      = &DDR_E,
-            .ddr_rw     = &DDR_RW,
-            .ddr_db4    = &DDR_DB4,
-            .ddr_db5    = &DDR_DB5,
-            .ddr_db6    = &DDR_DB6,
-            .ddr_db7    = &DDR_DB7,
+    uint8_t pi_rs   = PIN_TO_PORT_INDEX(cfg->rs );
+    uint8_t pi_e    = PIN_TO_PORT_INDEX(cfg->e  );
+    uint8_t pi_rw   = PIN_TO_PORT_INDEX(cfg->rw );
+    uint8_t pi_db4  = PIN_TO_PORT_INDEX(cfg->db4);
+    uint8_t pi_db5  = PIN_TO_PORT_INDEX(cfg->db5);
+    uint8_t pi_db6  = PIN_TO_PORT_INDEX(cfg->db6);
+    uint8_t pi_db7  = PIN_TO_PORT_INDEX(cfg->db7);
 
-            .port_rs    = &PORT_RS,
-            .port_e     = &PORT_E,
-            .port_rw    = &PORT_RW,
-            .port_db4   = &PORT_DB4,
-            .port_db5   = &PORT_DB5,
-            .port_db6   = &PORT_DB6,
-            .port_db7   = &PORT_DB7,
+    *rv = {
+        .ddr_rs     = DDR_REGS[pi_rs ],
+        .ddr_rw     = DDR_REGS[pi_rw ],
+        .ddr_e      = DDR_REGS[pi_e  ],
+        .ddr_db4    = DDR_REGS[pi_db4],
+        .ddr_db5    = DDR_REGS[pi_db5],
+        .ddr_db6    = DDR_REGS[pi_db6],
+        .ddr_db7    = DDR_REGS[pi_db7],
 
-            .pin_rs     = PIN_RS,
-            .pin_e      = PIN_E,
-            .pin_rw     = PIN_RW,
-            .pin_db4    = PIN_DB4,
-            .pin_db5    = PIN_DB5,
-            .pin_db6    = PIN_DB6,
-            .pin_db7    = PIN_DB7
+        .port_rs    = PORT_REGS[pi_rs ],
+        .port_rw    = PORT_REGS[pi_rw ],
+        .port_e     = PORT_REGS[pi_e  ],
+        .port_db4   = PORT_REGS[pi_db4],
+        .port_db5   = PORT_REGS[pi_db5],
+        .port_db6   = PORT_REGS[pi_db6],
+        .port_db7   = PORT_REGS[pi_db7],
 
-        };
+        .pin_rs     = PIN_TO_PORT_BIT(cfg->rs ),
+        .pin_rw     = PIN_TO_PORT_BIT(cfg->rw ),
+        .pin_e      = PIN_TO_PORT_BIT(cfg->e  ),
+        .pin_db4    = PIN_TO_PORT_BIT(cfg->db4),
+        .pin_db5    = PIN_TO_PORT_BIT(cfg->db5),
+        .pin_db6    = PIN_TO_PORT_BIT(cfg->db6),
+        .pin_db7    = PIN_TO_PORT_BIT(cfg->db7)
 
-    } else {
-        /* TODO: general config handling */
+    };
+    // Serial.println(">>");
+    // Serial.println((int) rv->ddr_rs  ); delay(1);
+    // Serial.println((int) rv->ddr_rw  ); delay(1);
+    // Serial.println((int) rv->ddr_e   ); delay(1);
+    // Serial.println((int) rv->ddr_db4 ); delay(1);
+    // Serial.println((int) rv->ddr_db5 ); delay(1);
+    // Serial.println((int) rv->ddr_db6 ); delay(1);
+    // Serial.println((int) rv->ddr_db7 ); delay(1);
 
-    }
+    // Serial.println("0!"); delay(1);
+
+    // Serial.println((int) rv->port_rs ); delay(1);
+    // Serial.println((int) rv->port_rw ); delay(1);
+    // Serial.println((int) rv->port_e  ); delay(1);
+    // Serial.println((int) rv->port_db4); delay(1);
+    // Serial.println((int) rv->port_db5); delay(1);
+    // Serial.println((int) rv->port_db6); delay(1);
+    // Serial.println((int) rv->port_db7); delay(1);
+
+    // Serial.println("1!");
+
+    // Serial.println(rv->pin_rs  ); delay(1);
+    // Serial.println(rv->pin_rw  ); delay(1);
+    // Serial.println(rv->pin_e   ); delay(1);
+    // Serial.println(rv->pin_db4 ); delay(1);
+    // Serial.println(rv->pin_db5 ); delay(1);
+    // Serial.println(rv->pin_db6 ); delay(1);
+    // Serial.println(rv->pin_db7 ); delay(1);
+
+    // Serial.println("<<");
 
 
     delay(40);
@@ -209,28 +233,17 @@ int lcd_init_connection(const struct Lcd_Config *cfg, struct Lcd_Connection *rv)
     // lcd_send_insn(rv, 0b00001111);
 
 
-
-
-    // lcd_send_data(0b00100000);
-    // str = "RULES";
-    // len = strlen(str);
-    // for (size_t i = 0; i < len; ++i)
-    //     lcd_send_data(str[i]);
-
-    // lcd_send_data(0b01001101);
-    return;
-
-
+    return 0;
 }
 
-void pulse_E(const struct Lcd_Connection *con)
+static inline void pulse_E(const struct Lcd_Connection *con)
 {
     SET_BIT(*con->port_e, con->pin_e);
     delayMicroseconds(1);
     CLR_BIT(*con->port_e, con->pin_e);
 }
 
-void lcd_set_nibble(const struct Lcd_Connection *con, uint8_t nib)
+static inline void lcd_set_nibble(const struct Lcd_Connection *con, uint8_t nib)
 {
     CLR_BIT(*con->port_db7, con->pin_db7);
     CLR_BIT(*con->port_db6, con->pin_db6);
@@ -256,10 +269,9 @@ int lcd_send_return_home(const struct Lcd_Connection *con)
 
 int lcd_send_set_cursor(const struct Lcd_Connection *con, uint8_t row, uint8_t col)
 {
-    // TODO
     uint8_t insn =
         INSN_SET_DDRAM_ADDRESS
-    |   ((row & 1u)         << 6)
+    |   ((row & 1u) << 6)
     |   (col & 0b111111);
     return lcd_send_insn(con, insn);
 }
@@ -444,41 +456,53 @@ int lcd_send_data(const struct Lcd_Connection *con, uint8_t d)
 
 // }
 
+void demo_g2()
+{
+    struct Lcd_Connection con;
+    lcd_init_connection(NULL, &con);
+
+    char *line1 = "ARDUINO RULES!";
+    size_t line1_len = strlen(line1);
+
+    char *line2_variants[] = {
+        "Roomba!  ", // spaces to equalize length (and zero out last 2 chars of "BLE[...]"
+        "BLE 4ever"
+    };
+    size_t line2_len = strlen(line2_variants[0]);
+    if (line2_len != strlen(line2_variants[1]))
+        return 1;
+
+    size_t cur = 0;
+    lcd_send_display_span(&con, line1, line1_len);
+    while (1) {
+        lcd_send_set_cursor(&con, 1, 0);
+        lcd_send_display_span(&con, line2_variants[cur], line2_len);
+        delay(2000);
+        cur = !cur;
+
+    }
+
+    // delay(1000);
+    // SET_BIT(DDRD, 5);
+
+    // for (int i = 0; i < 100; ++i) {
+    //     if (i % 2 == 0)
+    //         lcd_set_nibble(&con, 0b1000);
+    //     else
+    //         lcd_set_nibble(&con, 0b0000);
+    //     delayMicroseconds(100);
+    // }
+
+}
+
 
 int main(int argc, char *argv[])
 {
     init();
     // Serial.begin(9600);
-    // init_lcd();
-
-    struct Lcd_Connection con;
-    lcd_init_connection(NULL, &con);
-
-    char *str = "papap";
-    size_t len = strlen(str);
-    lcd_send_set_cursor(&con, 1, 0);
-    lcd_send_display_span(&con, str, strlen(str));
-    // char *str = "aparaphernelia";
-    // size_t len = strlen(str);
-    // for (size_t i = 0; i < len; ++i)
-    //     lcd_send_data(&con, str[i]);
-
+    demo_g2();
 
     return 0;
-
-
-
-
-    delay(1000);
-    SET_BIT(DDRD, 5);
-
-    for (int i = 0; i < 100; ++i) {
-        if (i % 2 == 0)
-            lcd_set_nibble(&con, 0b1000);
-        else
-            lcd_set_nibble(&con, 0b0000);
-        delayMicroseconds(100);
-    }
 
 }
 
