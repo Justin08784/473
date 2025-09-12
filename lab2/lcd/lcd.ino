@@ -50,13 +50,13 @@ struct Lcd_Config {
 };
 
 const struct Lcd_Config default_config = {
-    .rs = 6,
-    .rw = 7,
-    .e  = 8,
-    .db4= 2,
-    .db5= 3,
-    .db6= 4,
-    .db7= 5
+    .rs = 13,
+    .rw = 13,
+    .e  = 12,
+    .db4= 11,
+    .db5= 10,
+    .db6= 9,
+    .db7= 8
 };
 
 struct Lcd_Connection {
@@ -185,7 +185,7 @@ int lcd_init_connection(const struct Lcd_Config *cfg, struct Lcd_Connection *rv)
 
     delay(40);
     SET_BIT(*rv->ddr_e,      rv->pin_e);
-    SET_BIT(*rv->ddr_rw,     rv->pin_rw);
+    // SET_BIT(*rv->ddr_rw,     rv->pin_rw);
     SET_BIT(*rv->ddr_rs,     rv->pin_rs);
     SET_BIT(*rv->ddr_db7,    rv->pin_db7);
     SET_BIT(*rv->ddr_db6,    rv->pin_db6);
@@ -193,7 +193,7 @@ int lcd_init_connection(const struct Lcd_Config *cfg, struct Lcd_Connection *rv)
     SET_BIT(*rv->ddr_db4,    rv->pin_db4);
 
     CLR_BIT(*rv->port_e,     rv->pin_e);
-    CLR_BIT(*rv->port_rw,    rv->pin_rw);
+    // CLR_BIT(*rv->port_rw,    rv->pin_rw);
     CLR_BIT(*rv->port_rs,    rv->pin_rs);
     CLR_BIT(*rv->port_db7,   rv->pin_db7);
     CLR_BIT(*rv->port_db6,   rv->pin_db6);
@@ -290,7 +290,7 @@ int lcd_send_display_span(const struct Lcd_Connection *con, const uint8_t *src, 
 
 int lcd_send_insn(const struct Lcd_Connection *con, uint8_t d)
 {
-    CLR_BIT(*con->port_rw, con->pin_rw);
+    // CLR_BIT(*con->port_rw, con->pin_rw);
     CLR_BIT(*con->port_rs, con->pin_rs);
 
     lcd_set_nibble(con, d >> 4);
@@ -306,7 +306,7 @@ int lcd_send_insn(const struct Lcd_Connection *con, uint8_t d)
 
 int lcd_send_data(const struct Lcd_Connection *con, uint8_t d)
 {
-    CLR_BIT(*con->port_rw, con->pin_rw);
+    // CLR_BIT(*con->port_rw, con->pin_rw);
     SET_BIT(*con->port_rs, con->pin_rs);
 
     lcd_set_nibble(con, d >> 4);

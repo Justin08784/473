@@ -18,6 +18,8 @@ import time
 PORT = "/dev/tty.usbserial-A5XK3RJT"   # ← change this to your device
 BAUD = 9600
 
+insert_mode = False
+
 def key_to_str(key):
     if isinstance(key, keyboard.KeyCode) and key.char:
         return key.char.lower()
@@ -33,11 +35,24 @@ last_speed_change_fwd       = True
 def on_press(key):
     global last_speed_change_time
     global last_speed_change_fwd
+    global insert_mode
 
     k = key_to_str(key)
     print("detected " + k)
     if k not in pressed:
         pressed.add(k)
+
+    if (insert_mode):
+        if  'Key.esc' in pressed:
+            send("C22\0E")
+            insert_mode = False
+            return
+        elif 'Key.space' in pressed:
+            send("C22 E")
+            return
+        else:
+            send("C22" + str(k) + "E")
+            return
     # print("pressed: " + str(key))
 
     if      {'w', 'a'} <= pressed:
@@ -58,8 +73,7 @@ def on_press(key):
 
     elif    'i' in pressed:
         send("C21IE")
-    elif    'Key.esc' in pressed:
-        send("C21eE")
+        insert_mode = True
 
 
     elif    'w' in pressed:
