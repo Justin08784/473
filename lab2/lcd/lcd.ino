@@ -4,8 +4,8 @@
 #define CLR_BIT(r, i)   do {( (r) &= ~(1u << (i))   );} while(0)
 #define ADD_BIT(r, i, b)do {( (r) |= ((b) << (i))   );} while(0)
 
-#define PIN_TO_PORT_INDEX(i)            (((i) >> 3) & 1u)
-#define PIN_TO_PORT_BIT(i)              ((i) & 0b111)
+#define ABS_PIN_TO_PORT_INDEX(i)        (((i) >> 3) & 1u)   // [0..13] -> {&DDRD, &DDRB}
+#define ABS_PIN_TO_PORT_PIN(i)          ((i) & 0b111)       // [0..13] -> [0..7]
 
 #define INSN_CLEAR_DISPLAY              ((uint8_t) 0x1)
 #define INSN_RETURN_HOME                ((uint8_t) 0x2)
@@ -40,18 +40,16 @@ volatile uint8_t *const DDR_REGS[2] = {&DDRD,   &DDRB};
 volatile uint8_t *const PORT_REGS[2]= {&PORTD,  &PORTB};
 
 struct Lcd_Config {
-    // uint8_t dcb;        // display onoff config 
-    // uint8_t func_set;   // function set config
-
-    // pin indices
-    uint8_t rs, rw, e;
-    uint8_t db4, db5, db6, db7;
-        // note: db0-db3 unused (we only support 4-bit mode)
+    // absolute pins [0..13]
+    uint8_t rs;
+    // uint8_t rw;              // we only support writes. rw should be tied to high.
+    uint8_t e;
+    uint8_t db4, db5, db6, db7; // db0-db3 unused (we only support 4-bit mode)
 };
 
 const struct Lcd_Config default_config = {
     .rs = 13,
-    .rw = 13,
+    // .rw = 13,
     .e  = 12,
     .db4= 11,
     .db5= 10,
@@ -60,27 +58,27 @@ const struct Lcd_Config default_config = {
 };
 
 struct Lcd_Connection {
-    // ddr
+    // ddr pointers
     volatile uint8_t *ddr_rs;
-    volatile uint8_t *ddr_rw;
+    // volatile uint8_t *ddr_rw;
     volatile uint8_t *ddr_e;
     volatile uint8_t *ddr_db4;
     volatile uint8_t *ddr_db5;
     volatile uint8_t *ddr_db6;
     volatile uint8_t *ddr_db7;
 
-    // port
+    // port pointers
     volatile uint8_t *port_rs;
-    volatile uint8_t *port_rw;
+    // volatile uint8_t *port_rw;
     volatile uint8_t *port_e;
     volatile uint8_t *port_db4;
     volatile uint8_t *port_db5;
     volatile uint8_t *port_db6;
     volatile uint8_t *port_db7;
 
-    // pin
+    // in-port pins [0..7]
     uint8_t pin_rs;
-    uint8_t pin_rw;
+    // uint8_t pin_rw;
     uint8_t pin_e;
     uint8_t pin_db4;
     uint8_t pin_db5;
@@ -109,25 +107,25 @@ int lcd_send_data                   (const struct Lcd_Connection *con, const uin
     // ^ "backdoor"
 
 
-static inline void pulse_E                        (const struct Lcd_Connection *con);
-static inline void lcd_set_nibble                 (const struct Lcd_Connection *con, uint8_t nib);
+static inline void pulse_E          (const struct Lcd_Connection *con);
+static inline void lcd_set_nibble   (const struct Lcd_Connection *con, uint8_t nib);
 
 int lcd_init_connection(const struct Lcd_Config *cfg, struct Lcd_Connection *rv)
 {
     if (!cfg) // NULL config. Use defaults
         cfg = &default_config;
 
-    uint8_t pi_rs   = PIN_TO_PORT_INDEX(cfg->rs );
-    uint8_t pi_e    = PIN_TO_PORT_INDEX(cfg->e  );
-    uint8_t pi_rw   = PIN_TO_PORT_INDEX(cfg->rw );
-    uint8_t pi_db4  = PIN_TO_PORT_INDEX(cfg->db4);
-    uint8_t pi_db5  = PIN_TO_PORT_INDEX(cfg->db5);
-    uint8_t pi_db6  = PIN_TO_PORT_INDEX(cfg->db6);
-    uint8_t pi_db7  = PIN_TO_PORT_INDEX(cfg->db7);
+    uint8_t pi_rs   = ABS_PIN_TO_PORT_INDEX(cfg->rs );
+    uint8_t pi_e    = ABS_PIN_TO_PORT_INDEX(cfg->e  );
+    // uint8_t pi_rw   = ABS_PIN_TO_PORT_INDEX(cfg->rw );
+    uint8_t pi_db4  = ABS_PIN_TO_PORT_INDEX(cfg->db4);
+    uint8_t pi_db5  = ABS_PIN_TO_PORT_INDEX(cfg->db5);
+    uint8_t pi_db6  = ABS_PIN_TO_PORT_INDEX(cfg->db6);
+    uint8_t pi_db7  = ABS_PIN_TO_PORT_INDEX(cfg->db7);
 
     *rv = {
         .ddr_rs     = DDR_REGS[pi_rs ],
-        .ddr_rw     = DDR_REGS[pi_rw ],
+        // .ddr_rw     = DDR_REGS[pi_rw ],
         .ddr_e      = DDR_REGS[pi_e  ],
         .ddr_db4    = DDR_REGS[pi_db4],
         .ddr_db5    = DDR_REGS[pi_db5],
@@ -135,53 +133,22 @@ int lcd_init_connection(const struct Lcd_Config *cfg, struct Lcd_Connection *rv)
         .ddr_db7    = DDR_REGS[pi_db7],
 
         .port_rs    = PORT_REGS[pi_rs ],
-        .port_rw    = PORT_REGS[pi_rw ],
+        // .port_rw    = PORT_REGS[pi_rw ],
         .port_e     = PORT_REGS[pi_e  ],
         .port_db4   = PORT_REGS[pi_db4],
         .port_db5   = PORT_REGS[pi_db5],
         .port_db6   = PORT_REGS[pi_db6],
         .port_db7   = PORT_REGS[pi_db7],
 
-        .pin_rs     = PIN_TO_PORT_BIT(cfg->rs ),
-        .pin_rw     = PIN_TO_PORT_BIT(cfg->rw ),
-        .pin_e      = PIN_TO_PORT_BIT(cfg->e  ),
-        .pin_db4    = PIN_TO_PORT_BIT(cfg->db4),
-        .pin_db5    = PIN_TO_PORT_BIT(cfg->db5),
-        .pin_db6    = PIN_TO_PORT_BIT(cfg->db6),
-        .pin_db7    = PIN_TO_PORT_BIT(cfg->db7)
+        .pin_rs     = ABS_PIN_TO_PORT_PIN(cfg->rs ),
+        // .pin_rw     = ABS_PIN_TO_PORT_PIN(cfg->rw ),
+        .pin_e      = ABS_PIN_TO_PORT_PIN(cfg->e  ),
+        .pin_db4    = ABS_PIN_TO_PORT_PIN(cfg->db4),
+        .pin_db5    = ABS_PIN_TO_PORT_PIN(cfg->db5),
+        .pin_db6    = ABS_PIN_TO_PORT_PIN(cfg->db6),
+        .pin_db7    = ABS_PIN_TO_PORT_PIN(cfg->db7)
 
     };
-    // Serial.println(">>");
-    // Serial.println((int) rv->ddr_rs  ); delay(1);
-    // Serial.println((int) rv->ddr_rw  ); delay(1);
-    // Serial.println((int) rv->ddr_e   ); delay(1);
-    // Serial.println((int) rv->ddr_db4 ); delay(1);
-    // Serial.println((int) rv->ddr_db5 ); delay(1);
-    // Serial.println((int) rv->ddr_db6 ); delay(1);
-    // Serial.println((int) rv->ddr_db7 ); delay(1);
-
-    // Serial.println("0!"); delay(1);
-
-    // Serial.println((int) rv->port_rs ); delay(1);
-    // Serial.println((int) rv->port_rw ); delay(1);
-    // Serial.println((int) rv->port_e  ); delay(1);
-    // Serial.println((int) rv->port_db4); delay(1);
-    // Serial.println((int) rv->port_db5); delay(1);
-    // Serial.println((int) rv->port_db6); delay(1);
-    // Serial.println((int) rv->port_db7); delay(1);
-
-    // Serial.println("1!");
-
-    // Serial.println(rv->pin_rs  ); delay(1);
-    // Serial.println(rv->pin_rw  ); delay(1);
-    // Serial.println(rv->pin_e   ); delay(1);
-    // Serial.println(rv->pin_db4 ); delay(1);
-    // Serial.println(rv->pin_db5 ); delay(1);
-    // Serial.println(rv->pin_db6 ); delay(1);
-    // Serial.println(rv->pin_db7 ); delay(1);
-
-    // Serial.println("<<");
-
 
     delay(40);
     SET_BIT(*rv->ddr_e,      rv->pin_e);
@@ -347,24 +314,12 @@ void demo_g2()
 
     }
 
-    // delay(1000);
-    // SET_BIT(DDRD, 5);
-
-    // for (int i = 0; i < 100; ++i) {
-    //     if (i % 2 == 0)
-    //         lcd_set_nibble(&con, 0b1000);
-    //     else
-    //         lcd_set_nibble(&con, 0b0000);
-    //     delayMicroseconds(100);
-    // }
-
 }
 
 
 int main(int argc, char *argv[])
 {
     init();
-    // Serial.begin(9600);
     demo_g2();
 
     return 0;

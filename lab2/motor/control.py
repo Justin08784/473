@@ -1,21 +1,8 @@
-# import msvcrt
-# import serial
-# ser = serial.Serial('COM38', 9600)
-# while (True):
-#     # Poll keyboard
-#     if msvcrt.kbhit():
-#         key = msvcrt.getch()
-#         if key == b'f':
-#             ser.write(str.encode('C21FE'))
-#         elif key == b's':
-#             ser.write(str.encode('C21SE'))
-
-
 from pynput import keyboard
 import serial
 import time
 
-PORT = "/dev/tty.usbserial-A5XK3RJT"   # ← change this to your device
+PORT = "/dev/tty.usbserial-A5XK3RJT"
 BAUD = 9600
 
 insert_mode = False
@@ -27,7 +14,6 @@ def key_to_str(key):
         return str(key)
 
 def send(s):
-    print("sending: " + str(s));
     ser.write(s.encode())
 
 last_speed_change_time      = 0.0
@@ -38,7 +24,6 @@ def on_press(key):
     global insert_mode
 
     k = key_to_str(key)
-    print("detected " + k)
     if k not in pressed:
         pressed.add(k)
 
@@ -53,7 +38,6 @@ def on_press(key):
         else:
             send("C22" + str(k) + "E")
             return
-    # print("pressed: " + str(key))
 
     if      {'w', 'a'} <= pressed:
         send("C21LE")
@@ -84,12 +68,6 @@ def on_press(key):
         send("C21SE")
     elif    'Key.space' in pressed:
         send("C21 E");
-    # elif    'a' <= pressed:
-    #     send("BACK LEFT")
-    # elif    'd' <= pressed:
-    #     send("BACK LEFT")
-    # else:
-    #     send("C21" + k + "S");
 
     if      ',' in pressed:
         cur_time = time.time()
@@ -108,12 +86,6 @@ def on_release(key):
     k = key_to_str(key)
     if (k in pressed):
         pressed.remove(k)
-    # print("released: " + str(key))
-
-    # Press Esc to exit cleanly
-    # if key == keyboard.Key.esc:
-    #     # ser.close()
-    #     return False
 
 if __name__ == "__main__":
     ser = serial.Serial(PORT, BAUD, timeout=0)
