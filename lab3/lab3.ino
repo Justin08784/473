@@ -102,11 +102,13 @@ void partc_task1(void *param)  // This is a task.
 {
     // toggle pin 12
     pinMode(12, OUTPUT);
+    TickType_t prev = 0;
     for (;;) {
         PORTB |=   1 << 4;
-        cpu_work(30);
+        // cpu_work(30);
+        cpu_work(55);
         PORTB &= ~(1 << 4);
-        vTaskDelay(MS_TO_TICKS(85));
+        vTaskDelayUntil(&prev, 5);
     }
 }
 
@@ -114,11 +116,12 @@ void partc_task2(void *param)  // This is a task.
 {
     // toggle pin 13
     pinMode(13, OUTPUT);
+    TickType_t prev = 0;
     for (;;) {
         PORTB |=   1 << 5;
         cpu_work(10);
         PORTB &= ~(1 << 5);
-        vTaskDelay(MS_TO_TICKS(30));
+        vTaskDelayUntil(&prev, 2);
     }
 }
 
