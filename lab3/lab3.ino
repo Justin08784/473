@@ -1,4 +1,5 @@
 #include <Arduino_FreeRTOS.h>
+#include <semphr.h>
 #include "task.h"
 
 // define two tasks for Blink & AnalogRead
@@ -149,6 +150,80 @@ void partc_main()
     );
 }
 
+// PART D //
+SemaphoreHandle_t semaphore;
+volatile uint8_t t1_pin = 0;
+
+void partd_task1(void* param)  // This is a task.
+{
+    // toggle pin 12
+    pinMode(12, OUTPUT);
+    TickType_t prev = 0;
+
+    for (;;) {
+        while (xSemaphoreTake(semaphore, (TickType_t) 1000) != pdPASS); // wait until the semaphore passes
+        cpu_work(55);
+        PORTB &= ~(1 << 4);
+    }
+}
+
+void partd_task2(void* param)  // This is a task.
+{
+    // toggle pin 13
+    pinMode(13, OUTPUT);
+    TickType_t prev = 0;
+    for (;;) {
+        PORTB |=   1 << 5;
+        cpu_work(10);
+        PORTB &= ~(1 << 5);
+        vTaskDelayUntil(&prev, 2);
+    }
+}
+
+void partd_task3(void* param) { // Task 3
+    TickType_t prev = 0;
+
+    for (;;) {
+        vTaskDelayUntil(&prev, 5);
+        PORTB |=   1 << 4;
+        xSemaphoreGive(semaphore);
+    }
+}
+
+void partd_main(){
+    Serial.begin(9600);
+    while (!Serial);
+
+    semaphore = xSemaphoreCreateBinary();
+
+    xTaskCreate(
+        partd_task1,
+        "t1",
+        128,
+        NULL,
+        1,
+        NULL
+    );
+
+    xTaskCreate(
+        partd_task2,
+        "t2",
+        128,
+        NULL,
+        2,
+        NULL
+    );
+
+    xTaskCreate(
+        partd_task3,
+        "t3",
+        128,
+        NULL,
+        3,
+        NULL
+    );
+}
+
 void loop() {}
 
 
@@ -156,5 +231,5 @@ void loop() {}
 void setup()
 {
     // partb_main();
-    partc_main();
+    partd_main();
 }
