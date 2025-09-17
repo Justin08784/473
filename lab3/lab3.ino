@@ -223,6 +223,78 @@ void partd_main()
     );
 }
 
+
+SemaphoreHandle_t e_sem = NULL;
+void parte_task1(void* param)
+{
+    // toggles pin 12
+    TickType_t prev = 0;
+    uint8_t t2_val = 0;
+
+    for (;;) {
+        vTaskDelayUntil(&prev, 2); // ~30ms
+        t2_val = PORTB & (1 << 5);
+        PORTB &= ~(1 << 5); // save t2's pin
+
+        PORTB |=   1 << 4;
+        cpu_work(20);
+        PORTB &= ~(1 << 4);
+
+        PORTB |= t2_val;    // restore t2's pin
+    }
+}
+
+void parte_task2(void* param)
+{
+    for (;;) {
+        while (xSemaphoreTake(e_sem, 1000) != pdPASS);
+        PORTB |=   1 << 5;
+        cpu_work(100);
+        PORTB &= ~(1 << 5);
+    }
+}
+
+void parte_isr_pin2()
+{
+    // v1: non-deferred
+    // cpu_work(100);
+
+    // v2: deferred
+    xSemaphoreGiveFromISR(e_sem, NULL);
+}
+
+void parte_main()
+{
+    // initialize serial communication at 9600 bits per second:
+    Serial.begin(9600);
+    while (!Serial);
+
+    e_sem = xSemaphoreCreateBinary();
+
+    pinMode(2,  INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(2), parte_isr_pin2, RISING);
+    pinMode(12, OUTPUT);
+    pinMode(13, OUTPUT);
+
+    xTaskCreate(
+        parte_task1,
+        "t1",
+        128,
+        NULL,
+        2,
+        NULL
+    );
+
+    xTaskCreate(
+        parte_task2,
+        "t2",
+        128,
+        NULL,
+        1,
+        NULL
+    );
+}
+
 void loop() {}
 
 
@@ -230,5 +302,5 @@ void loop() {}
 void setup()
 {
     // partb_main();
-    partd_main();
+    parte_main();
 }
