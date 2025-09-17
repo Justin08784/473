@@ -152,17 +152,14 @@ void partc_main()
 
 // PART D //
 SemaphoreHandle_t semaphore;
-volatile uint8_t t1_pin = 0;
 
 void partd_task1(void* param)  // This is a task.
 {
     // toggle pin 12
-    pinMode(12, OUTPUT);
-    TickType_t prev = 0;
-
     for (;;) {
         while (xSemaphoreTake(semaphore, (TickType_t) 1000) != pdPASS); // wait until the semaphore passes
-        cpu_work(55);
+        cpu_work(20);
+        // cpu_work(55);
         PORTB &= ~(1 << 4);
     }
 }
@@ -170,7 +167,6 @@ void partd_task1(void* param)  // This is a task.
 void partd_task2(void* param)  // This is a task.
 {
     // toggle pin 13
-    pinMode(13, OUTPUT);
     TickType_t prev = 0;
     for (;;) {
         PORTB |=   1 << 5;
@@ -180,9 +176,9 @@ void partd_task2(void* param)  // This is a task.
     }
 }
 
-void partd_task3(void* param) { // Task 3
+void partd_task3(void* param)
+{ // Task 3
     TickType_t prev = 0;
-
     for (;;) {
         vTaskDelayUntil(&prev, 5);
         PORTB |=   1 << 4;
@@ -190,11 +186,14 @@ void partd_task3(void* param) { // Task 3
     }
 }
 
-void partd_main(){
+void partd_main()
+{
     Serial.begin(9600);
     while (!Serial);
 
     semaphore = xSemaphoreCreateBinary();
+    pinMode(12, OUTPUT);
+    pinMode(13, OUTPUT);
 
     xTaskCreate(
         partd_task1,
