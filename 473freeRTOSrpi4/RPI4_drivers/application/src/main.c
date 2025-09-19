@@ -24,49 +24,58 @@ xSemaphoreHandle gpio21Sem;
 
 void clear_isr_gpio21(void);
 
-static void gpio_isr(void){
+static void gpio_isr(void)
+{
    clear_isr_gpio21(); 
    xSemaphoreGiveFromISR(gpio21Sem, NULL); 
 }
 
-
-
-
 /*register the isr handler */
-int gpio_isr_init(void){
-    if ( isr_register(IRQ_GPIO0, GPIO_PRIORITY, (0x1U << 0x3U), gpio_isr) != 0)
+int gpio_isr_init(void)
+{
+    if (isr_register(IRQ_GPIO0, GPIO_PRIORITY, (0x1U << 0x3U), gpio_isr) != 0)
         return -1;
+
     return 0;
 }
 
-void cputime(unsigned long numofms) { volatile unsigned long i = 0; for(i=0;i<numofms*1851;i++); }
-
-void task20(void *pParam) {
-(void) pParam;
-  portTickType xLastWakeTime;
-  const portTickType xFrequency = 2;
-     xLastWakeTime = xTaskGetTickCount();
-     for(;;)
-     {    
-        vTaskDelayUntil(&xLastWakeTime,xFrequency);
-        while( xSemaphoreTake( gpio21Sem, portMAX_DELAY ) == pdTRUE )
-        gpio_pin_toggle(20);
-     }
+void cputime(unsigned long numofms)
+{
+    for(volatile unsigned long i = 0; i < numofms * 1851; ++i);
 }
-void task16(void *pParam) {
-(void) pParam;
-  portTickType xLastWakeTime;
-  const portTickType xFrequency = 85;//1 tick is 1ms
-     xLastWakeTime = xTaskGetTickCount();
-     for( ;; )
-     {       
+
+void task20(void *pParam)
+{
+    (void) pParam;
+    portTickType xLastWakeTime;
+    const portTickType xFrequency = 2;
+    xLastWakeTime = xTaskGetTickCount();
+
+    for(;;) {    
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        while(xSemaphoreTake(gpio21Sem, portMAX_DELAY) == pdTRUE)
+            gpio_pin_toggle(20);
+    }
+}
+
+
+void task16(void *pParam)
+{
+    (void) pParam;
+    portTickType xLastWakeTime;
+    const portTickType xFrequency = 85;//1 tick is 1ms
+    xLastWakeTime = xTaskGetTickCount();
+
+    for(;;) {       
         vTaskDelayUntil(&xLastWakeTime,xFrequency);      
         gpio_pin_set(16, 1);
         cputime(10);
         gpio_pin_set(16, 0);      
     }
 }
-void main(void) {
+
+void main(void)
+{
 	gpio_pin_init(GPIO_20, OUT, GPIO_PIN_PULL_UP);
  	gpio_pin_init(GPIO_16, OUT, GPIO_PIN_PULL_UP);
  
@@ -76,14 +85,15 @@ void main(void) {
 	gpio_isr_init();
 	
 	// task creation	    	 
-    	xTaskCreate(task20, "GPIO20", 128, NULL, 2, NULL);
-    	xTaskCreate(task16, "GPIO16", 128, NULL, 1, NULL);
-    	
-    	// semaphores
-    	gpio21Sem = xSemaphoreCreateBinary(); 
+    xTaskCreate(task20, "GPIO20", 128, NULL, 2, NULL);
+    xTaskCreate(task16, "GPIO16", 128, NULL, 1, NULL);
+    
+    // semaphores
+    gpio21Sem = xSemaphoreCreateBinary(); 
     			
 	vTaskStartScheduler();
 	while(1);
 }
+
 void vApplicationIdleHook( void ){}
 void vApplicationTickHook( void ){}
