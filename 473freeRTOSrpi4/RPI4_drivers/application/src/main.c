@@ -147,26 +147,31 @@ void task2() {
 Task 3: Flash an LED based on distance measurement. This task has no assigned period, runs whenever possible.
 */
 void task3() {
-	int distance_cm;
-	int pulse_frequency; // in Hz
+	uint32_t distance_cm = 0;
+	// int pulse_frequency; // in Hz
+    uint32_t pulse_period_ms = 0;
 
 	while(1){
-		gpio_pin_set(T3_PIN, 1);
+		// gpio_pin_set(T3_PIN, 1);
 
-		while (xSemaphoreTake(semaphore_dist, 200) != pdTRUE);
+		// while (xSemaphoreTake(semaphore_dist, 200) != pdTRUE);
 
 		distance_cm = DISTANCE_IN_TICKS * portTICK_RATE_MS * 17; // 17 comes from physics: sound travels 343 m/s and travels 2*distance for the round trip
-		pulse_frequency = distance_cm / 10;
-		xSemaphoreGive(semaphore_dist);
+		// pulse_frequency = distance_cm / 10;
+        pulse_period_ms = (1000 * 10) / distance_cm;
+		// xSemaphoreGive(semaphore_dist);
 
 		// 25ms is enough to see a blink
 		gpio_pin_set(LED_PIN, 1);
 		vTaskDelay(25 / portTICK_RATE_MS);
 		gpio_pin_set(LED_PIN, 0);
 
-		gpio_pin_set(T3_PIN, 0);
+		// gpio_pin_set(T3_PIN, 0);
 
-		vTaskDelay(pulse_frequency * 1000 / portTICK_RATE_MS); // Have at least one pair of blinks according to the old pulse frequency before we get a new one
+        // vTaskDelay(pulse_period_ms / portTICK_RATE_MS);
+        vTaskDelay(pulse_period_ms);
+        // vTaskDelay(DISTANCE_IN_TICKS);
+		// vTaskDelay(pulse_frequency * 1000 / portTICK_RATE_MS); // Have at least one pair of blinks according to the old pulse frequency before we get a new one
 	}
 }
 
@@ -179,6 +184,7 @@ int main(void) {
 	gpio_pin_set(T2_PIN, 0);
 	gpio_pin_set(T3_PIN, 0);
 
+	gpio_pin_init(LED_PIN, OUT, GPIO_PIN_PULL_UP);
 	gpio_pin_init(EN1, OUT, GPIO_PIN_PULL_UP);
 	gpio_pin_init(EN2, OUT, GPIO_PIN_PULL_UP);
 	gpio_pin_init(A_1, OUT, GPIO_PIN_PULL_UP);
