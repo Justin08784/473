@@ -55,14 +55,7 @@ int RIGHT_MOTOR = 0;
 #define T2_PIN 5
 #define T3_PIN 0
 
-//LCD pins. Feel free to change.
-#define RS 2
-#define RW 3
-#define E_ 4
-#define D4 17
-#define D5 27
-#define D6 22
-#define D7 10
+#define LED_PIN 2
 
 //moveRobot as used in lab 1
 void moveRobot(char command);
@@ -83,6 +76,8 @@ void motorControl(int ifLeftMotor, char command);
 	****/
 
 int DISTANCE_IN_TICKS = 0;
+SemaphoreHandle_t semaphore_dist = NULL;
+
 
 
 //Task 1 is implemented for you. It interfaces with the distance sensor and 
@@ -93,7 +88,7 @@ int DISTANCE_IN_TICKS = 0;
 
 void task1() {
 	portTickType xLastWakeTime;
-	const portTickType xFrequency = 200 / portTICK_RATE_MS;
+	const portTickType xFrequency = 50 / portTICK_RATE_MS; // TODO: shouldn't this be 50 / portTick_RATE_MS and not 200? In the lab its 50ms not 200ms.
 	
 	xLastWakeTime = xTaskGetTickCount();
 
@@ -102,13 +97,11 @@ void task1() {
 		
 		//IN TASK
 		gpio_pin_set(T1_PIN, 1);
-		//
-
 		gpio_pin_set(TRIG, 1);
-
 		vTaskDelay(1);
-
 		gpio_pin_set(TRIG, 0);
+		while (xSemaphoreTake(semaphore_dist, 200) != pdTRUE); // don't override the semaphore
+
 		while(gpio_pin_read(ECHO) == 0);
 		
 		portTickType curr = xTaskGetTickCount();
@@ -116,20 +109,66 @@ void task1() {
 		portTickType traveltime_in_ticks = xTaskGetTickCount() - curr;
 
 		DISTANCE_IN_TICKS = traveltime_in_ticks;
-		
-		//END TASK
+
+		xSemaphoreGive(semaphore_dist);
 		gpio_pin_set(T1_PIN, 0);
 	}
 }
 
-/****
-		TODO: Add additional tasks here
+/*
+Task 2: Read the global variable from task1 when it is ready and move as needed
+*/
+void task2() {
+	const portTickType xFrequency = 100 / portTICK_RATE_MS;
+	const int STOP_DISTANCE_TICKS = 5;
+	portTickType xLastWakeTime = xTaskGetTickCount();
 
+	while(1) {
 
+		vTaskDelayUntil(&xLastWakeTime, xFrequency); // Wait 100ms between drive adjustments
 
+		gpio_pin_set(T2_PIN, 1);
+		while (xSemaphoreTake(semaphore_dist, 200) != pdTRUE); // don't override the semaphore
 
+		// now safe to read the distance variable
+		if (DISTANCE_IN_TICKS <= STOP_DISTANCE_TICKS) {
+			moveRobot(STOP);
+		} else {
+			moveRobot(FORWARD);
+		}
 
-	****/
+		xSemaphoreGive(semaphore_dist);
+		gpio_pin_set(T2_PIN, 0);
+
+	}
+}
+
+/*
+Task 3: Flash an LED based on distance measurement. This task has no assigned period, runs whenever possible.
+*/
+void task3() {
+	int distance_cm;
+	int pulse_frequency; // in Hz
+
+	while(1){
+		gpio_pin_set(T3_PIN, 1);
+
+		while (xSemaphoreTake(semaphore_dist, 200) != pdTRUE);
+
+		distance_cm = DISTANCE_IN_TICKS * portTICK_RATE_MS * 17; // 17 comes from physics: sound travels 343 m/s and travels 2*distance for the round trip
+		pulse_frequency = distance_cm / 10;
+		xSemaphoreGive(semaphore_dist);
+
+		// 25ms is enough to see a blink
+		gpio_pin_set(LED_PIN, 1);
+		vTaskDelay(25 / portTICK_RATE_MS);
+		gpio_pin_set(LED_PIN, 0);
+
+		gpio_pin_set(T3_PIN, 0);
+
+		vTaskDelay(pulse_frequency * 1000 / portTICK_RATE_MS); // Have at least one pair of blinks according to the old pulse frequency before we get a new one
+	}
+}
 
 
 int main(void) {
@@ -150,29 +189,12 @@ int main(void) {
 	gpio_pin_init(TRIG, OUT, GPIO_PIN_PULL_UP);
 	gpio_pin_init(ECHO, IN, GPIO_PIN_PULL_NON);
 	gpio_pin_set(TRIG, 0);
-	
-	/****
-		TODO: Initialize LCD here
 
+    semaphore_dist = xSemaphoreCreateMutex();
 
-
-
-
-	****/
-
-	//initFB();
-
-	//DisableInterrupts();
-	//InitInterruptController();
-
-	xTaskCreate(task1, "t1", 128, NULL, 2, NULL);
-	/****
-		TODO: Create more tasks here
-
-	****/
-
-	//set to 0 for no debug, 1 for debug, or 2 for GCC instrumentation (if enabled in config)
-	//loaded = 1;
+	xTaskCreate(task1, "t1", 128, NULL, 3, NULL);
+	xTaskCreate(task2, "t2", 128, NULL, 2, NULL);
+	xTaskCreate(task3, "t3", 128, NULL, 1, NULL);
 
 	vTaskStartScheduler();
 
@@ -184,16 +206,6 @@ int main(void) {
 		;
 	}
 }
-
-/****
-		TODO: Add LCD functions here.
-
-
-
-
-
-
-	****/
 
 void moveRobot(char command) {
     switch(command) {
