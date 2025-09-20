@@ -100,7 +100,7 @@ void task1() {
 		gpio_pin_set(TRIG, 1);
 		vTaskDelay(1);
 		gpio_pin_set(TRIG, 0);
-		while (xSemaphoreTake(semaphore_dist, 200) != pdTRUE); // don't override the semaphore
+		while (xSemaphoreTake(semaphore_dist, portMAX_DELAY) != pdTRUE); // don't override the semaphore
 
 		while(gpio_pin_read(ECHO) == 0);
 		
@@ -128,7 +128,7 @@ void task2() {
 		vTaskDelayUntil(&xLastWakeTime, xFrequency); // Wait 100ms between drive adjustments
 
 		gpio_pin_set(T2_PIN, 1);
-		while (xSemaphoreTake(semaphore_dist, 200) != pdTRUE); // don't override the semaphore
+		while (xSemaphoreTake(semaphore_dist, portMAX_DELAY) != pdTRUE); // don't override the semaphore
 
 		// now safe to read the distance variable
 		if (DISTANCE_IN_TICKS <= STOP_DISTANCE_TICKS) {
@@ -150,23 +150,19 @@ void task3() {
 	uint32_t distance_cm = 0;
 	// int pulse_frequency; // in Hz
     uint32_t pulse_period_ms = 0;
+    uint32_t dist_in_ticks_local;
 
 	while(1){
-		// gpio_pin_set(T3_PIN, 1);
-
-		// while (xSemaphoreTake(semaphore_dist, 200) != pdTRUE);
-
-		distance_cm = DISTANCE_IN_TICKS * portTICK_RATE_MS * 17; // 17 comes from physics: sound travels 343 m/s and travels 2*distance for the round trip
-		// pulse_frequency = distance_cm / 10;
-        pulse_period_ms = (1000 * 10) / distance_cm;
-		// xSemaphoreGive(semaphore_dist);
+        dist_in_ticks_local = DISTANCE_IN_TICKS;
+        dist_in_ticks_local = dist_in_ticks_local == 0 ? 1 : dist_in_ticks_local;
+		distance_cm = dist_in_ticks_local * portTICK_RATE_MS * 17; // 17 comes from physics: sound travels 343 m/s and travels 2*distance for the round trip
+        // pulse_period_ms = distance_cm * (1000 / 10); // this is the correct frequency but it is hard to observe...
+        pulse_period_ms = distance_cm * (100 / 10);     // ...so we use this instead
 
 		// 25ms is enough to see a blink
 		gpio_pin_set(LED_PIN, 1);
 		vTaskDelay(25 / portTICK_RATE_MS);
 		gpio_pin_set(LED_PIN, 0);
-
-		// gpio_pin_set(T3_PIN, 0);
 
         // vTaskDelay(pulse_period_ms / portTICK_RATE_MS);
         vTaskDelay(pulse_period_ms);
