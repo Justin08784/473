@@ -153,6 +153,9 @@ void task3() {
     uint32_t dist_in_ticks_local;
 
 	while(1){
+        vTaskDelay(pulse_period_ms);
+
+		gpio_pin_set(T3_PIN, 1);
         dist_in_ticks_local = DISTANCE_IN_TICKS;
         dist_in_ticks_local = dist_in_ticks_local == 0 ? 1 : dist_in_ticks_local;
 		distance_cm = dist_in_ticks_local * portTICK_RATE_MS * 17; // 17 comes from physics: sound travels 343 m/s and travels 2*distance for the round trip
@@ -164,10 +167,7 @@ void task3() {
 		vTaskDelay(25 / portTICK_RATE_MS);
 		gpio_pin_set(LED_PIN, 0);
 
-        // vTaskDelay(pulse_period_ms / portTICK_RATE_MS);
-        vTaskDelay(pulse_period_ms);
-        // vTaskDelay(DISTANCE_IN_TICKS);
-		// vTaskDelay(pulse_frequency * 1000 / portTICK_RATE_MS); // Have at least one pair of blinks according to the old pulse frequency before we get a new one
+		gpio_pin_set(T3_PIN, 0);
 	}
 }
 
@@ -195,7 +195,7 @@ int main(void) {
     semaphore_dist = xSemaphoreCreateMutex();
 
 	xTaskCreate(task1, "t1", 128, NULL, 3, NULL);
-	xTaskCreate(task2, "t2", 128, NULL, 2, NULL);
+	// xTaskCreate(task2, "t2", 128, NULL, 2, NULL);
 	xTaskCreate(task3, "t3", 128, NULL, 1, NULL);
 
 	vTaskStartScheduler();
